@@ -1,0 +1,74 @@
+groups:
+  - name: taskflow-slo
+    rules:
+      - alert: EndpointDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} no responde desde fuera"
+          runbook: "docs/RUNBOOK.md#endpointdown"
+
+      - alert: BackendDown
+        expr: absent(up{job="backend"} == 1)
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "No hay ninguna réplica del backend sana"
+          runbook: "docs/RUNBOOK.md#backenddown"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{job="backend",status_code=~"5.."}[5m]))
+            /
+          sum(rate(http_request_duration_seconds_count{job="backend"}[5m])) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Más del 5% de las peticiones devuelven 5xx ({{ $value | humanizePercentage }})"
+          runbook: "docs/RUNBOOK.md#higherrorrate"
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{job="backend",route!="/metrics"}[5m]))
+          ) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Latencia p95 por encima de 1s ({{ $value | humanizeDuration }})"
+          runbook: "docs/RUNBOOK.md#highlatencyp95"
+
+      - alert: TLSCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox"} - time() < 14 * 24 * 3600
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "El certificado TLS de {{ $labels.instance }} caduca en menos de 14 días"
+          runbook: "docs/RUNBOOK.md#tlscertexpiringsoon"
+
+  - name: host
+    rules:
+      - alert: HostDiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Queda menos del 15% de disco en {{ $labels.instance }}"
+          runbook: "docs/RUNBOOK.md#hostdiskspacelow"
+
+      - alert: HostHighMemory
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Uso de memoria por encima del 90%"
+
+      - alert: HostHighCpu
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "CPU por encima del 90% durante 15 minutos"

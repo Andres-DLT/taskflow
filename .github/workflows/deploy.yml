@@ -1,0 +1,134 @@
+# Despliegue de una versión concreta a un entorno. Lo usa cd.yml y también se puede lanzar
+# a mano (Actions → Deploy → Run workflow) para redesplegar o hacer rollback a un tag anterior.
+#
+# Configuración por GitHub Environment (Settings → Environments → staging / production):
+#   vars:    DEPLOY_HOST, DEPLOY_USER (opcional, por defecto "deploy"), DOMAIN
+#   secrets: SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS
+#   production: "Required reviewers" activado → aprobación manual antes de desplegar.
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      image_tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      image_tag:
+        description: "Tag de imagen a desplegar (p. ej. sha-<commit> o 1.4.0)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }} ← ${{ inputs.image_tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://${{ vars.DOMAIN }}
+    # Un solo despliegue por entorno a la vez, sin cancelar el que esté en curso.
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      TARGET: ${{ vars.DEPLOY_USER || 'deploy' }}@${{ vars.DEPLOY_HOST }}
+      DOMAIN: ${{ vars.DOMAIN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Comprobar configuración del entorno
+        run: |
+          [[ -n "$DEPLOY_HOST" ]] || { echo "::error::Falta la variable DEPLOY_HOST en el GitHub Environment"; exit 1; }
+          [[ -n "$DOMAIN" ]] || { echo "::error::Falta la variable DOMAIN en el GitHub Environment"; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "::error::image_tag inválido"; exit 1; }
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verificar firmas (solo se despliega lo que construyó este repositorio)
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          for svc in backend frontend; do
+            cosign verify "ghcr.io/$owner/taskflow-$svc:$IMAGE_TAG" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/cd.yml@" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+            echo "✓ firma válida: taskflow-$svc:$IMAGE_TAG"
+          done
+
+      - name: Configurar SSH (host key fijada, sin StrictHostKeyChecking=no)
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+
+      - name: Sincronizar configuración (compose, Caddy, monitorización, scripts)
+        run: |
+          rsync -az --exclude '.env' --exclude 'secrets/' --exclude '.deploy-history' \
+            deploy/ "$TARGET:/opt/app/"
+
+      - name: Login del servidor en GHCR (token efímero del job)
+        run: echo "$GHCR_TOKEN" | ssh "$TARGET" docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Desplegar
+        id: deploy
+        run: ssh "$TARGET" "bash /opt/app/scripts/deploy.sh '$IMAGE_TAG'"
+
+      - name: Smoke tests contra ${{ vars.DOMAIN }}
+        id: smoke
+        run: |
+          expected=""
+          [[ "$IMAGE_TAG" == sha-* ]] && expected="${IMAGE_TAG#sha-}"
+          bash deploy/scripts/smoke-test.sh "https://$DOMAIN" "$expected"
+
+      - name: Rollback automático si fallan los smoke tests
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          echo "::warning::Smoke tests fallidos en ${{ inputs.environment }}: volviendo a la versión anterior"
+          ssh "$TARGET" "bash /opt/app/scripts/rollback.sh"
+          bash deploy/scripts/smoke-test.sh "https://$DOMAIN"
+
+      - name: Cerrar sesión de GHCR en el servidor
+        if: always()
+        run: ssh "$TARGET" docker logout ghcr.io || true
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Despliegue a \`${{ inputs.environment }}\`"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Imagen | \`$IMAGE_TAG\` |"
+            echo "| URL | https://$DOMAIN |"
+            echo "| Deploy | ${{ steps.deploy.outcome }} |"
+            echo "| Smoke tests | ${{ steps.smoke.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

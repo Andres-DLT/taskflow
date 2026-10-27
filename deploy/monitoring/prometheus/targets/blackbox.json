@@ -1,0 +1,3 @@
+[
+  { "targets": ["https://example.com/healthz"], "labels": { "note": "lo regenera scripts/deploy.sh con el DOMAIN del servidor" } }
+]

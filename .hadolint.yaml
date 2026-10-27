@@ -1,0 +1,5 @@
+# DL3018 (fijar versión en apk add): la imagen base ya está fijada por versión exacta,
+# Dependabot la actualiza y Trivy bloquea CVEs; fijar tini haría fallar builds al rotar Alpine.
+ignored:
+  - DL3018
+failure-threshold: warning

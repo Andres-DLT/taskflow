@@ -1,0 +1,224 @@
+# Stack de producción (staging y production usan este mismo fichero; cambia el .env del servidor).
+# Lo sincroniza el pipeline de CD en /opt/app y lo opera scripts/deploy.sh. No editar en el servidor.
+name: taskflow
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Endurecimiento común a los contenedores de la aplicación.
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  logging: *logging
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DB_HOST: db
+  DB_NAME: ${POSTGRES_DB:-taskflow}
+  DB_USER: ${POSTGRES_USER:-taskflow}
+  DB_PASSWORD_FILE: /run/secrets/db_password
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+
+x-backend-image: &backend-image ${REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?IMAGE_NAMESPACE requerido}/taskflow-backend:${IMAGE_TAG:?IMAGE_TAG requerido}
+
+services:
+  # ---------------------------------------------------------------- borde ---
+  proxy:
+    image: caddy:2.11-alpine
+    <<: *hardened
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN requerido}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL requerido}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+
+  # ----------------------------------------------------------- aplicación ---
+  frontend:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE}/taskflow-frontend:${IMAGE_TAG}
+    <<: *hardened
+    networks: [edge]
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+
+  backend:
+    image: *backend-image
+    <<: *hardened
+    environment: *backend-env
+    secrets: [db_password]
+    stop_grace_period: 20s
+    networks: [edge, data, monitoring]
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+
+  # Job one-shot: `docker compose run --rm migrate`. El perfil evita que arranque con `up`.
+  migrate:
+    image: *backend-image
+    <<: *hardened
+    restart: "no"
+    profiles: [tools]
+    command: ["node", "src/migrate.js"]
+    environment: *backend-env
+    secrets: [db_password]
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    shm_size: 128m
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taskflow}
+      POSTGRES_USER: ${POSTGRES_USER:-taskflow}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 512M }
+
+  # --------------------------------------------- observabilidad (perfil) ---
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=5GB
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    networks: [monitoring]
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    secrets: [alert_webhook_url]
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    networks: [monitoring]
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1
+    profiles: [monitoring]
+    <<: *hardened
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./monitoring/blackbox:/etc/blackbox:ro
+    networks: [monitoring]
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    profiles: [monitoring]
+    <<: *hardened
+    pid: host
+    command: ["--path.rootfs=/host"]
+    volumes:
+      - /:/host:ro,rslave
+    networks: [monitoring]
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.60.5
+    profiles: [monitoring]
+    restart: unless-stopped
+    logging: *logging
+    privileged: true # Necesario para leer cgroups de todos los contenedores.
+    devices: ["/dev/kmsg"]
+    command: ["--docker_only=true", "--housekeeping_interval=15s"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [monitoring]
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    # Solo en loopback: se accede con un túnel SSH (ver docs/RUNBOOK.md), nunca expuesto a Internet.
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks: [monitoring]
+
+# Secretos fuera del repo: los genera scripts/init-secrets.sh en el servidor.
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password
+  alert_webhook_url:
+    file: ./secrets/alert_webhook_url
+
+networks:
+  edge: {}             # proxy ↔ app
+  data:
+    internal: true     # app ↔ db, sin salida a Internet
+  monitoring: {}       # scraping y alertas
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:

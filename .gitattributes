@@ -1,0 +1,5 @@
+# Fin de línea LF siempre: un script con CRLF clonado en Windows falla en el servidor Linux.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.ico binary

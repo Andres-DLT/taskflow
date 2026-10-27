@@ -1,0 +1,23 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Configuración y secretos locales / de servidor
+.env
+.env.*
+!.env.example
+deploy/secrets/
+deploy/.deploy-history
+
+# Terraform
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+
+.DS_Store
+.idea/
+.vscode/

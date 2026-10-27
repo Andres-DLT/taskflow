@@ -1,0 +1,6 @@
+# Reemplaza @your-github-user por tu usuario o equipo. Con "Require review from Code Owners"
+# en la protección de rama, los cambios en infraestructura y pipelines exigen su aprobación.
+*                       @your-github-user
+/.github/               @your-github-user
+/infra/                 @your-github-user
+/deploy/                @your-github-user
