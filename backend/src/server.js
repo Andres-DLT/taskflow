@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
@@ -13,7 +14,13 @@ const app = createApp({
   repo: createPgTaskRepository(pool),
   logger,
   metrics: createMetrics(),
-  info: { version: config.version, commit: config.commit },
+  // instance = hostname del contenedor: permite ver qué réplica atendió la petición.
+  info: {
+    version: config.version,
+    commit: config.commit,
+    environment: config.environment,
+    instance: hostname(),
+  },
 });
 
 const server = app.listen(config.port, () => {

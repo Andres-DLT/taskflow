@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help install lint test test-integration build up down logs smoke e2e clean tf-fmt tf-validate
+.PHONY: help install lint test test-integration build up down logs smoke e2e demo clean tf-fmt tf-validate
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -39,6 +39,9 @@ smoke: ## Smoke tests contra el stack local
 	bash deploy/scripts/smoke-test.sh http://localhost:8080
 
 e2e: up smoke ## Levanta el stack y ejecuta los smoke tests
+
+demo: ## Levanta el stack con las imágenes publicadas por el pipeline (IMAGE_TAG=main por defecto)
+	docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --no-build proxy
 
 clean: ## Para el stack y borra volúmenes
 	docker compose down -v --remove-orphans

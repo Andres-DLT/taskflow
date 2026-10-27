@@ -18,4 +18,5 @@ export const api = {
     request(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: 'DELETE' }),
   version: () => request('/api/version'),
+  ready: () => request('/readyz'),
 };

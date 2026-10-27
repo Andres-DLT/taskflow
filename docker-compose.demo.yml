@@ -1,0 +1,20 @@
+# Demo con las imágenes que publica el pipeline en GHCR (las mismas que irían a producción),
+# en lugar de construirlas en local:
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --no-build proxy
+# IMAGE_TAG admite main (último merge), sha-<commit> o una versión semver.
+x-backend-image: &backend-image ghcr.io/${IMAGE_NAMESPACE:-andres-dlt}/taskflow-backend:${IMAGE_TAG:-main}
+
+services:
+  migrate:
+    image: *backend-image
+    pull_policy: always
+
+  backend:
+    image: *backend-image
+    pull_policy: always
+    environment:
+      APP_ENV: demo
+
+  frontend:
+    image: ghcr.io/${IMAGE_NAMESPACE:-andres-dlt}/taskflow-frontend:${IMAGE_TAG:-main}
+    pull_policy: always

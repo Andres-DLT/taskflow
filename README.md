@@ -75,6 +75,13 @@ bash deploy/scripts/smoke-test.sh http://localhost:8080
 # → http://localhost:8080
 ```
 
+Demo con las imágenes que publica el pipeline (las mismas que van a producción, con versión y
+commit reales visibles en la app):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --no-build proxy
+```
+
 Desarrollo con hot-reload:
 
 ```bash

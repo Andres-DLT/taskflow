@@ -22,6 +22,7 @@ export function loadConfig(env = process.env) {
     logLevel: env.LOG_LEVEL ?? 'info',
     version: env.APP_VERSION ?? 'dev',
     commit: env.GIT_SHA ?? 'local',
+    environment: env.APP_ENV ?? 'local',
     shutdownTimeoutMs: Number(env.SHUTDOWN_TIMEOUT_MS ?? 10_000),
     db: env.DATABASE_URL
       ? { connectionString: env.DATABASE_URL, max: Number(env.DB_POOL_MAX ?? 10) }
