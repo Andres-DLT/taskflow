@@ -9,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # ---- runtime: nginx sin privilegios (uid 101, puerto 8080) sirviendo estáticos ----
-FROM nginxinc/nginx-unprivileged:1.30-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
 ARG APP_VERSION=dev
 ARG GIT_SHA=local
 ARG BUILD_DATE
