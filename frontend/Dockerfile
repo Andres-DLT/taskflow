@@ -20,6 +20,12 @@ LABEL org.opencontainers.image.title="taskflow-frontend" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.licenses="MIT"
 
+# Parches de seguridad de Alpine publicados después de la imagen base, y fuera curl (no se usa:
+# el healthcheck usa el wget de busybox). Se vuelve al usuario sin privilegios de la imagen.
+USER root
+RUN apk upgrade --no-cache && apk del --no-cache curl
+USER 101
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 

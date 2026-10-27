@@ -126,7 +126,6 @@ pip install pre-commit && pre-commit install
    Cuando los servidores existan (paso 4), activa los despliegues con la variable de repositorio
    `DEPLOY_ENABLED=true` (`gh variable set DEPLOY_ENABLED --body true`). Hasta entonces el CD
    construye, escanea, firma y publica las imágenes, pero no despliega.
-5. Si la organización usa gitleaks-action, añade el secreto `GITLEAKS_LICENSE` (gratis; no hace falta en cuentas personales).
 
 ## 3. Infraestructura con Terraform
 
