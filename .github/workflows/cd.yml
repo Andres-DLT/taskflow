@@ -107,7 +107,9 @@ jobs:
   staging:
     name: Deploy · staging
     needs: build
-    if: github.ref == 'refs/heads/main'
+    # Los despliegues se activan con la variable de repositorio DEPLOY_ENABLED=true una vez
+    # existan los servidores y los GitHub Environments; hasta entonces el CD solo publica imágenes.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/deploy.yml
     permissions:
       contents: read
