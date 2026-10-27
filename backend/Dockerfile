@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- base: misma imagen fijada para todas las etapas ----------------------------
-FROM node:24.22.1-alpine3.24 AS base
+FROM node:26.12.1-alpine3.24 AS base
 WORKDIR /app
 ENV NODE_ENV=production \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
