@@ -165,7 +165,7 @@ services:
     networks: [monitoring]
 
   cadvisor:
-    image: ghcr.io/google/cadvisor:0.60.5
+    image: ghcr.io/google/cadvisor:v0.60.6
     profiles: [monitoring]
     restart: unless-stopped
     logging: *logging
