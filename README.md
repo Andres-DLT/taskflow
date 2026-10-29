@@ -82,6 +82,15 @@ commit reales visibles en la app):
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --no-build proxy
 ```
 
+Prueba en vivo: con la app publicada en una URL pública, **Actions → Prueba en vivo → Run workflow**
+hace que GitHub cree una tarea desde fuera, compruebe que llega a PostgreSQL, la deje visible unos
+segundos en la app y la borre. El resumen del job muestra cada paso y su latencia. También se puede
+lanzar en local (requiere `curl` y `jq`):
+
+```bash
+bash deploy/scripts/live-check.sh http://localhost:8080 5
+```
+
 Desarrollo con hot-reload:
 
 ```bash

@@ -52,6 +52,9 @@ describe('App', () => {
     expect(await screen.findByText('API y base de datos OK')).toBeTruthy();
     expect(screen.getByText('a1b2c3')).toBeTruthy();
     expect(screen.queryByLabelText('Nueva tarea')).toBeNull();
+    expect(screen.getByText('Lanzar la prueba en vivo').getAttribute('href')).toBe(
+      'https://github.com/Andres-DLT/taskflow/actions/workflows/live-check.yml',
+    );
   });
 
   it('muestra un error si la API falla', async () => {

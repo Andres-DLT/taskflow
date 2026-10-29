@@ -1,5 +1,7 @@
 import { REPO_URL } from './config.js';
 
+const LIVE_CHECK_URL = `${REPO_URL}/actions/workflows/live-check.yml`;
+
 const ARCHITECTURE = [
   { name: 'Tu navegador', detail: 'Esta página (React)' },
   { name: 'Caddy', detail: 'HTTPS y reparto de carga' },
@@ -101,6 +103,13 @@ export default function HowItWorks({ info, healthy }) {
         ))}
       </ol>
 
+      <p className="hint">
+        Añadir tareas <strong>no</strong> ejecuta el pipeline: las tareas son datos, y el pipeline solo
+        se pone en marcha cuando cambia el código. Para ver a GitHub hablando con esta app en directo,
+        lanza la <a href={LIVE_CHECK_URL} target="_blank" rel="noreferrer">prueba en vivo</a>: crea una
+        tarea desde fuera, la verás aparecer aquí unos segundos y después se borra sola.
+      </p>
+
       <h2>Si algo sale mal</h2>
       <ul className="safety">
         {SAFETY_NET.map((item) => (
@@ -114,6 +123,9 @@ export default function HowItWorks({ info, healthy }) {
         </a>
         <a href={`${REPO_URL}/actions`} target="_blank" rel="noreferrer">
           Ver el pipeline en acción
+        </a>
+        <a href={LIVE_CHECK_URL} target="_blank" rel="noreferrer">
+          Lanzar la prueba en vivo
         </a>
       </p>
     </section>
